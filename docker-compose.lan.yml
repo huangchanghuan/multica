@@ -1,0 +1,12 @@
+# LAN access override — publish ports on all interfaces so the instance is
+# reachable from other devices via http://sun-pc.local:3000 / :8080, matching
+# the previous deployment in /home/sun/apps/multica.
+# NOTE: this exposes raw ports to the LAN (bypasses host firewall via Docker).
+# Only use on a trusted home/office network.
+services:
+  backend:
+    ports: !override
+      - "0.0.0.0:${BACKEND_PORT:-${API_PORT:-${SERVER_PORT:-${PORT:-8080}}}}:8080"
+  frontend:
+    ports: !override
+      - "0.0.0.0:${FRONTEND_PORT:-3000}:3000"
