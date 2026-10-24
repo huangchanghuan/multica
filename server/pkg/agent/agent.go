@@ -317,7 +317,7 @@ type Result struct {
 
 // Config configures a Backend instance.
 type Config struct {
-	ExecutablePath string            // path to CLI binary (claude, codebuddy, codex, copilot, opencode, codearts, openclaw, hermes, pi, cursor, kimi, reasonix, dsh, kiro-cli, agy, qodercli, qoderclicn, traecli, grok, qwen, qwenpaw, mcode, muse, dim, zeroclaw)
+	ExecutablePath string            // path to CLI binary (claude, codebuddy, codex, copilot, opencode, codearts, openclaw, hermes, pi, cursor, kimi, reasonix, dsh, kiro-cli, agy, qodercli, qoderclicn, traecli, grok, qwen, qwenpaw, mcode, muse, mobilecoder, dim, zeroclaw)
 	CLIVersion     string            // detected version paired with ExecutablePath; vendor-specific usage semantics also require BuiltinRuntime
 	Env            map[string]string // extra environment variables
 	Logger         *slog.Logger
@@ -352,7 +352,7 @@ type Config struct {
 }
 
 // New creates a Backend for the given agent type.
-// Supported types: "claude", "codebuddy", "codex", "copilot", "opencode", "codearts", "deveco", "openclaw", "hermes", "pi", "cursor", "kimi", "reasonix", "dsh", "kiro", "antigravity", "qoder", "qoderclicn", "traecli", "grok", "qwen", "qwenpaw", "mcode", "muse".
+// Supported types: "claude", "codebuddy", "codex", "copilot", "opencode", "codearts", "deveco", "openclaw", "hermes", "pi", "cursor", "kimi", "reasonix", "dsh", "kiro", "antigravity", "qoder", "qoderclicn", "traecli", "grok", "qwen", "qwenpaw", "mcode", "muse", "mobilecoder".
 //
 // SupportedTypes is the canonical whitelist of agent types eligible to back a
 // custom runtime profile. It MUST stay in lockstep with the
@@ -361,16 +361,19 @@ type Config struct {
 // add deveco, migration 179 to add grok, migration 202 to add qwen,
 // migration 242 to add qoderclicn, migration 253 to add qwenpaw,
 // migration 254 to add reasonix, migration 313 to add dsh, migration 342 to
-// add mcode, migration 370 to add dim, migration 403 to add zeroclaw, and
-// migration 441 to add codearts): a custom runtime profile may
-// only be based on a backend Multica officially supports.
+// add mcode, migration 370 to add dim, migration 403 to add zeroclaw,
+// migration 441 to add codearts, and migration 593 to add mobilecoder):
+// a custom runtime profile may only be based on a backend Multica officially
+// supports.
 // qoder and qoderclicn share the same ACP backend; keeping both provider keys
 // lets the daemon auto-detect and register the international and China-region
 // binaries independently. traecli (Trae) has a New backend, launch
 // header and provider branding but was previously missing from this whitelist,
 // so the family picker rejected it (#4945). grok is the xAI Grok Build CLI
 // ACP backend (`grok agent --always-approve stdio`). qwen is Qwen Code's
-// native `qwen -p <prompt> --output-format stream-json` backend.
+// native `qwen -p <prompt> --output-format stream-json` backend. mobilecoder
+// is China Mobile's Mobile Coder (`mobile run --format json --yolo`), an
+// OpenCode-lineage fork with its own skip-permissions flag name.
 var SupportedTypes = []string{
 	"claude",
 	"codebuddy",
@@ -396,6 +399,7 @@ var SupportedTypes = []string{
 	"qwenpaw",
 	"mcode",
 	"muse",
+	"mobilecoder",
 	"dim",
 	"zeroclaw",
 }
@@ -430,6 +434,7 @@ var resumeRejectionUndetectable = map[string]bool{
 	"deveco":      true,
 	"opencode":    true,
 	"codearts":    true,
+	"mobilecoder": true,
 }
 
 // ResumeRejectionUndetectable reports whether agentType is a backend that
@@ -503,6 +508,8 @@ func New(agentType string, cfg Config) (Backend, error) {
 		return &mcodeBackend{cfg: cfg}, nil
 	case "muse":
 		return &museBackend{cfg: cfg}, nil
+	case "mobilecoder":
+		return &mobilecoderBackend{cfg: cfg}, nil
 	case "zeroclaw":
 		return &zeroclawBackend{cfg: cfg}, nil
 	default:
@@ -552,6 +559,7 @@ var launchHeaders = map[string]string{
 	"dim":         "dim acp",
 	"mcode":       "mcode acp",
 	"muse":        "muse serve (msp)",
+	"mobilecoder": "mobile run (json)",
 	"zeroclaw":    "zeroclaw acp",
 }
 

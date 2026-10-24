@@ -6457,16 +6457,17 @@ func taskRootDirParams(workspacesRoot string, task Task) execenv.RootDirParams {
 // this map at init so their display names stay in lockstep with the
 // descriptor.
 var runtimeDisplayNameOverrides = map[string]string{
-	"codearts":   "CodeArts",
-	"dsh":        "DeepSeek Harness",
-	"traecli":    "Trae",
-	"grok":       "Grok",
-	"qoderclicn": "Qoder CN",
-	"qwen":       "Qwen Code",
-	"qwenpaw":    "QwenPaw",
-	"mcode":      "MiniMax Code",
-	"muse":       "Muse Code",
-	"zeroclaw":   "ZeroClaw",
+	"codearts":    "CodeArts",
+	"dsh":         "DeepSeek Harness",
+	"traecli":     "Trae",
+	"grok":        "Grok",
+	"qoderclicn":  "Qoder CN",
+	"qwen":        "Qwen Code",
+	"qwenpaw":     "QwenPaw",
+	"mcode":       "MiniMax Code",
+	"muse":        "Muse Code",
+	"mobilecoder": "Mobile Coder",
+	"zeroclaw":    "ZeroClaw",
 }
 
 func init() {
@@ -8744,7 +8745,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	model, thinkingLevel, serviceTier = selection.Model, selection.ThinkingLevel, selection.ServiceTier
 
 	var idleWatchdogTimeout time.Duration
-	if provider == "opencode" || provider == "codearts" {
+	if provider == "opencode" || provider == "codearts" || provider == "mobilecoder" {
 		idleWatchdogTimeout = d.cfg.OpenCodeIdleWatchdog
 	}
 	execOpts := agent.ExecOptions{
@@ -9313,12 +9314,12 @@ func shouldRetryWithFreshSession(result agent.Result, priorSessionID string, too
 	if !agent.ResumeRejectionUndetectable(provider) {
 		return false
 	}
-	// antigravity, codearts, copilot, cursor, deveco and opencode scrape SessionID out
-	// of stream output and have no rejection string captured anywhere, so an
-	// empty SessionID is the only thing they can offer. It proves no session
-	// was established this run, which is exactly what the gate relied on for
-	// every backend before ResumeRejected existed; keeping it preserves their
-	// recovery instead of silently removing it.
+	// antigravity, codearts, copilot, cursor, deveco, mobilecoder and opencode
+	// scrape SessionID out of stream output and have no rejection string
+	// captured anywhere, so an empty SessionID is the only thing they can
+	// offer. It proves no session was established this run, which is exactly
+	// what the gate relied on for every backend before ResumeRejected existed;
+	// keeping it preserves their recovery instead of silently removing it.
 	//
 	// Inventing rejection phrases for these backends would be the alternative,
 	// and it is worse: no real output has been captured for any of them, and

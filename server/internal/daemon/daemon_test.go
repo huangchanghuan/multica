@@ -3830,7 +3830,7 @@ func TestShouldRetryWithFreshSession_CompatPathIsBackendScoped(t *testing.T) {
 	// the compat path exists to catch.
 	result := agent.Result{Status: "failed", Error: "exit status 1"}
 
-	undetectable := []string{"antigravity", "codearts", "copilot", "cursor", "deveco", "opencode"}
+	undetectable := []string{"antigravity", "codearts", "copilot", "cursor", "deveco", "mobilecoder", "opencode"}
 	for _, provider := range undetectable {
 		t.Run(provider+" retries", func(t *testing.T) {
 			t.Parallel()
@@ -6711,9 +6711,9 @@ func TestExecuteAndDrain_RedactsNestedToolInputBeforeSending(t *testing.T) {
 // answer" gate can't be flipped by a future classifier change. The error is
 // session-shaped (a fresh session resolves it), yet it must NOT count as one
 // of the "fresh session is not the answer" buckets — in particular not
-// missing-config — or the in-turn fresh-session retry on the five
+// missing-config — or the in-turn fresh-session retry on the seven
 // ResumeRejectionUndetectable backends (antigravity, codearts, copilot, cursor,
-// deveco, opencode) would silently stop firing and the dead session would be resumed
+// deveco, mobilecoder, opencode) would silently stop firing and the dead session would be resumed
 // into the same provider error forever.
 func TestFreshSessionMayHelp(t *testing.T) {
 	t.Parallel()

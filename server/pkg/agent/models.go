@@ -276,6 +276,13 @@ func ListModels(ctx context.Context, providerType string, runtimeCmd Command) (C
 		return cachedDiscovery(discoveryCacheKey(providerType, runtimeCmd), func() (Catalog, error) {
 			return discovered(discoverDevecoModels(ctx, runtimeCmd))
 		})
+	case "mobilecoder":
+		// Mobile Coder's `mobile models` prints the same plain
+		// provider/model rows as OpenCode's non-verbose listing (verified
+		// against mobile 1.4.1), so it reuses the OpenCode discovery.
+		return cachedDiscovery(discoveryCacheKey(providerType, runtimeCmd), func() (Catalog, error) {
+			return discovered(discoverMobilecoderModels(ctx, runtimeCmd))
+		})
 	case "pi":
 		return cachedDiscovery(discoveryCacheKey(providerType, runtimeCmd), func() (Catalog, error) {
 			return discovered(discoverPiModels(ctx, runtimeCmd))
@@ -367,7 +374,7 @@ func ModelSelectorMustBeProviderQualified(providerType string) bool {
 		providerType = desc.ProtocolFamily
 	}
 	switch providerType {
-	case "opencode", "deveco":
+	case "opencode", "deveco", "mobilecoder":
 		return true
 	default:
 		return false

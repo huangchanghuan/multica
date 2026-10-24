@@ -164,6 +164,7 @@ var allFileBasedProviders = []string{
 	"qwen",
 	"qwenpaw",
 	"mcode",
+	"mobilecoder",
 }
 
 // TestPrepareThenCleanupSidecarsRoundTripEmptyWorkdir is the headline
@@ -647,6 +648,7 @@ var sameSlugSkillProviderCases = []struct {
 	{"muse", filepath.Join(".agents", "skills", "issue-review")},
 	{"qwen", filepath.Join(".qwen", "skills", "issue-review")},
 	{"hermes", filepath.Join(".agent_context", "skills", "issue-review")},
+	{"mobilecoder", filepath.Join(".mobile-coder", "skills", "issue-review")},
 }
 
 // TestPrepareThenCleanupSidecarsSameSlugCollisionPerProvider is the

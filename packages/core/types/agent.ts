@@ -113,6 +113,7 @@ export const RUNTIME_PROFILE_PROTOCOL_FAMILIES = [
   "opencode",
   "codearts",
   "deveco",
+  "mobilecoder",
   "openclaw",
   "hermes",
   "pi",

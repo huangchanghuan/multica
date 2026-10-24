@@ -368,6 +368,13 @@ func skillsDirPath(workDir, provider string) string {
 		// is anchored at the task workdir via `deveco run --dir <workDir>` +
 		// the PWD override in devecoBackend, same anchor OpenCode uses.
 		return filepath.Join(workDir, ".deveco", "skills")
+	case "mobilecoder":
+		// Mobile Coder (China Mobile's OpenCode fork) natively discovers
+		// project skills from .mobile-coder/skills/ in the workdir (verified
+		// against mobile 1.4.1 with a canary SKILL.md). Discovery is anchored
+		// at the task workdir via `mobile run --dir <workDir>` + the PWD
+		// override in mobilecoderBackend, same anchor OpenCode uses.
+		return filepath.Join(workDir, ".mobile-coder", "skills")
 	case "openclaw":
 		// OpenClaw's native skill scanner reads <workspaceDir>/skills/. The
 		// daemon pairs this with a per-task synthesized openclaw-config.json

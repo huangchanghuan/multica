@@ -753,7 +753,9 @@ func CheckThinkingLevelWith(loadCatalog func() (Catalog, error), providerType, m
 			// opencode has no single default model, so it accepts a level any
 			// advertised model supports. Providers that instead require a pinned
 			// model never reach here — they were already rejected above.
-			if providerType == "opencode" {
+			// mobilecoder is the same engine lineage (no single default
+			// model), so it joins this branch.
+			if providerType == "opencode" || providerType == "mobilecoder" {
 				if anyModelSupportsThinkingValue(models, value) {
 					return ThinkingLevelCheck{Valid: true}, nil
 				}
@@ -998,6 +1000,10 @@ var thinkingDynamicCatalogProviders = map[string]bool{
 	"grok":     true,
 	"opencode": true,
 	"kimi":     true,
+	// Mobile Coder's `--variant` takes the same provider-specific reasoning
+	// values as OpenCode's (verified against mobile 1.4.1); the vocabulary is
+	// owned by the discovered model catalog, not a fixed enum.
+	"mobilecoder": true,
 }
 
 // acpCatalogThinkingProviders are the ACP runtimes that discover their effort

@@ -166,6 +166,11 @@ func localSkillRootsForProvider(provider string) ([]localSkillRoot, bool, error)
 			providerRoot = filepath.Join(home, ".codeartsdoer", "skills")
 		case "deveco":
 			providerRoot = filepath.Join(home, ".config", "deveco", "skills")
+		case "mobilecoder":
+			// Verified against mobile 1.4.1 with a canary SKILL.md:
+			// ~/.config/mobile-coder/skills is the user-level discovery root
+			// (the XDG config dir, not ~/.mobile-coder/skills).
+			providerRoot = filepath.Join(home, ".config", "mobile-coder", "skills")
 		case "openclaw":
 			providerRoot = filepath.Join(home, ".openclaw", "skills")
 		case "pi":

@@ -185,6 +185,9 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 	if e, ok := probe("MULTICA_OPENCODE_PATH", "opencode", "MULTICA_OPENCODE_MODEL"); ok {
 		agents["opencode"] = e
 	}
+	if e, ok := probe("MULTICA_MOBILECODER_PATH", "mobile", "MULTICA_MOBILECODER_MODEL"); ok {
+		agents["mobilecoder"] = e
+	}
 	if e, ok := probe("MULTICA_CODEARTS_PATH", "codearts", "MULTICA_CODEARTS_MODEL"); ok {
 		agents["codearts"] = e
 	} else if strings.TrimSpace(os.Getenv("MULTICA_CODEARTS_PATH")) == "" {

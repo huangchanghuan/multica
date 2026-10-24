@@ -162,6 +162,7 @@ var (
 		"dim":           "dim",
 		"mcode":         "mcode",
 		"muse":          "muse",
+		"mobilecoder":   "mobilecoder",
 		"zeroclaw":      "zeroclaw",
 		"multica_agent": "multica_agent",
 		"openclaw":      "openclaw",

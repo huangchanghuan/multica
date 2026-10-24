@@ -404,6 +404,10 @@ export function ProviderLogo({
       return <OpenCodeLogo className={className} />;
     case "deveco":
       return <DevecoLogo className={className} />;
+    case "mobilecoder":
+      // Mobile Coder is an OpenCode-lineage fork without a dedicated mark
+      // yet; the OpenCode logo stands in so the row doesn't render blank.
+      return <OpenCodeLogo className={className} />;
     case "codearts":
       return <CodeArtsLogo className={className} />;
     case "openclaw":

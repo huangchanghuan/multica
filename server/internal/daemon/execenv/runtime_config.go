@@ -168,6 +168,7 @@ func formatProjectResource(r ProjectResourceForEnv) string {
 // For OpenCode: writes {workDir}/AGENTS.md  (skills discovered natively from .opencode/skills/)
 // For CodeArts: writes {workDir}/AGENTS.md  (skills discovered natively from .codeartsdoer/skills/)
 // For DevEco Code: writes {workDir}/AGENTS.md  (skills discovered natively from .deveco/skills/)
+// For Mobile Coder: writes {workDir}/AGENTS.md  (skills discovered natively from .mobile-coder/skills/)
 // For OpenClaw: writes {workDir}/AGENTS.md  (skills discovered natively from {workDir}/skills/ via per-task openclaw-config.json that pins agents.defaults.workspace)
 // For Hermes:   writes {workDir}/AGENTS.md  (skills discovered natively from a per-task HERMES_HOME/skills seeded by the daemon; see hermes_home.go)
 // For Pi:       writes {workDir}/AGENTS.md  (skills discovered natively from .pi/skills/)
@@ -218,7 +219,7 @@ func runtimeConfigPath(workDir, provider string) string {
 		return filepath.Join(workDir, "CODEBUDDY.md")
 	case "qwen":
 		return filepath.Join(workDir, "QWEN.md")
-	case "codex", "copilot", "opencode", "codearts", "deveco", "openclaw", "hermes", "pi", "cursor", "kimi", "reasonix", "dsh", "kiro", "antigravity", "qoder", "qoderclicn", "traecli", "grok", "qwenpaw", "mcode", "muse", "dim", "zeroclaw":
+	case "codex", "copilot", "opencode", "codearts", "deveco", "mobilecoder", "openclaw", "hermes", "pi", "cursor", "kimi", "reasonix", "dsh", "kiro", "antigravity", "qoder", "qoderclicn", "traecli", "grok", "qwenpaw", "mcode", "muse", "dim", "zeroclaw":
 		return filepath.Join(workDir, "AGENTS.md")
 	default:
 		return ""

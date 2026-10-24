@@ -1316,6 +1316,7 @@ func TestInjectRuntimeConfigBackgroundTaskSafetyProviderAgnostic(t *testing.T) {
 		{"codex", "AGENTS.md"},
 		{"opencode", "AGENTS.md"},
 		{"codearts", "AGENTS.md"},
+		{"mobilecoder", "AGENTS.md"},
 		{"hermes", "AGENTS.md"},
 	}
 

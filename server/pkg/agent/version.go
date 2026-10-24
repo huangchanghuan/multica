@@ -34,6 +34,12 @@ var MinVersions = map[string]string{
 	// filename in a shared /tmp is not safe, so refusing the CLI is the only
 	// place we can stop it. See #8392: ~2,960 files, 11.16 GiB, root at 99%.
 	"opencode": "1.1.54",
+	// mobilecoder: `run --format json` event stream, --yolo, --dir, --variant
+	// and the `.mobile-coder/skills` + `~/.config/mobile-coder/skills`
+	// discovery roots captured and verified against mobile 1.4.1. The floor
+	// also guards the generic `mobile` command name: an unrelated binary on
+	// PATH fails the version parse and is not advertised as a runtime.
+	"mobilecoder": "1.4.1",
 }
 
 // MinQuickCreateCLIVersion gates the agent-create (quick-create) flow against

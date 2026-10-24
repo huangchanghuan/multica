@@ -74,6 +74,7 @@ var agentGitExcludePatterns = []string{
 	".opencode",
 	".codeartsdoer",
 	".deveco",
+	".mobile-coder",
 	"CODEBUDDY.md",
 	".codebuddy",
 	".pi",

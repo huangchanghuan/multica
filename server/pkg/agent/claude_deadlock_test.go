@@ -20,6 +20,12 @@ import (
 // invoked with a real agent CLI's argv: TestMain runs before the testing
 // package parses flags, so arguments like `run --format json` never reach it.
 func TestMain(m *testing.M) {
+	if os.Getenv("MC_REAP_TEST_HELPER") == "1" {
+		// Impersonate a leaked mobile-coder session worker: sleep long
+		// enough for the reaper test to scan /proc and match this argv.
+		time.Sleep(60 * time.Second)
+		os.Exit(0)
+	}
 	if os.Getenv(codeartsModelHelperEnv) == "1" {
 		runFakeCodeArtsModelHelper()
 		os.Exit(0)

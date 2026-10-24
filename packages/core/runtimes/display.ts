@@ -50,6 +50,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   qwenpaw: "QwenPaw",
   mcode: "MiniMax Code",
   muse: "Muse Code",
+  mobilecoder: "Mobile Coder",
   omp: "Oh-My-Pi",
   zeroclaw: "ZeroClaw",
 };

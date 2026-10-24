@@ -264,6 +264,7 @@ func Classify(rawError string) Reason {
 			"stream disconnected",
 			opencodeStreamEndedPrefix,
 			codeartsStreamEndedPrefix,
+			mobilecoderStreamEndedPrefix,
 			"connection closed",
 			"mid-response",
 			"error sending request",
@@ -561,8 +562,9 @@ func isPiProviderNetworkError(lower string) bool {
 // is a PREFIX of the whole error rather than a phrase somewhere inside it, so
 // its presence identifies the failure outright.
 const (
-	opencodeStreamEndedPrefix = "opencode stream ended"
-	codeartsStreamEndedPrefix = "codearts stream ended"
+	opencodeStreamEndedPrefix    = "opencode stream ended"
+	codeartsStreamEndedPrefix    = "codearts stream ended"
+	mobilecoderStreamEndedPrefix = "mobilecoder stream ended"
 )
 
 // legacyOpencodeStreamEndedReasons are the buckets a daemon predating rule 7's
@@ -660,7 +662,8 @@ func NormalizeDaemonReason(reason, rawError string) Reason {
 	}
 	if legacyOpencodeStreamEndedReasons[reason] &&
 		(strings.HasPrefix(lowerError, opencodeStreamEndedPrefix) ||
-			strings.HasPrefix(lowerError, codeartsStreamEndedPrefix)) {
+			strings.HasPrefix(lowerError, codeartsStreamEndedPrefix) ||
+			strings.HasPrefix(lowerError, mobilecoderStreamEndedPrefix)) {
 		return ReasonAgentProviderNetwork
 	}
 	// #7112: same mixed-version gap. A daemon predating the OpenClaw CLI
