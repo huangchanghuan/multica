@@ -44,6 +44,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -64,6 +65,30 @@ func mobilecoderTerminateGrace() time.Duration {
 	return 5 * time.Second
 }
 
+// mobilecoderInFlight counts mobilecoder runs whose child process has been
+// spawned and not yet fully reaped: incremented just before the CLI starts,
+// decremented when the result goroutine finishes. The post-run worker reap
+// only fires when the count drops to zero — in multi-process mode (MCP runs)
+// the session worker is a concurrent run's execution engine, so sweeping
+// workers while any mobilecoder run is still in flight could kill a live
+// worker mid-task and fail the other run. Package-level, because the daemon
+// creates a fresh backend instance per task (agent.New is uncached), so an
+// instance-level counter could never observe cross-task concurrency.
+var mobilecoderInFlight atomic.Int64
+
+// mobilecoderReapGraceNanos optionally overrides, in nanoseconds, how long
+// the post-run worker sweep waits for the CLI's at-exit worker spawn. Zero
+// means use the default (3s — the worker is observable at t+1s, absent at
+// t+0, verified against mobile 1.4.1).
+var mobilecoderReapGraceNanos atomic.Int64
+
+func mobilecoderReapGrace() time.Duration {
+	if n := mobilecoderReapGraceNanos.Load(); n > 0 {
+		return time.Duration(n)
+	}
+	return 3 * time.Second
+}
+
 // mobilecoderBlockedArgs are flags hardcoded by the daemon that must not be
 // overridden by user-configured custom_args. Mobile Coder's `run` subcommand
 // exposes the same daemon-managed flags as OpenCode's, under the fork's own
@@ -73,6 +98,21 @@ var mobilecoderBlockedArgs = map[string]blockedArgMode{
 	"--dir":     blockedWithValue,  // task workdir anchor for skill / AGENTS.md discovery
 	"--variant": blockedWithValue,  // owned by agent.thinking_level
 	"--yolo":    blockedStandalone, // daemon manages non-interactive permission prompts
+}
+
+// buildMobileCoderMCPConfigContent translates an agent.mcp_config payload
+// into the JSON string injected via MOBILE_CODER_CONFIG_CONTENT — the fork's
+// general inline-config injection mechanism (verified against mobile 1.4.1:
+// the binary resolves parseFlagJson(Flag.MOBILE_CODER_CONFIG_CONTENT, …)),
+// the exact analogue of OpenCode's OPENCODE_CONFIG_CONTENT. The config
+// schema is shared with OpenCode, so the translation and strict validation
+// are reused wholesale (both the Claude-style mcpServers and the native mcp
+// input shapes); only the channel name differs. Both transports were
+// canary-verified end to end against 1.4.1: a `{"type":"local","command":[…]}`
+// server and a `{"type":"remote","url":…}` server were injected, and the
+// agent invoked each canary tool successfully.
+func buildMobileCoderMCPConfigContent(raw json.RawMessage) (string, error) {
+	return buildOpenCodeMCPConfigContent(raw)
 }
 
 // mobilecoderBackend implements Backend by spawning
@@ -144,6 +184,40 @@ func (b *mobilecoderBackend) Execute(ctx context.Context, prompt string, opts Ex
 	}
 
 	env := buildEnv(b.cfg.Env)
+	// Project agent.mcp_config into Mobile Coder. MCP is a multi-process-only
+	// feature in this fork: the MCP connection pool (mcpControls) lives in
+	// the session-manager module, and a run with MULTI_PROCESS_ENABLED=false
+	// plus an injected config dies silently right after step_start (exit 0,
+	// no further events, empty stderr — verified against mobile 1.4.1), so
+	// the two channels are mutually exclusive by construction:
+	//
+	//   - servers configured (mcpContent != "") → inject
+	//     MOBILE_CODER_CONFIG_CONTENT and SKIP the worker suppression below:
+	//     the run must go multi-process, will leak its session worker, and
+	//     the post-run reap becomes the leak defence;
+	//   - no servers ("" — includes nil / null / empty maps, and an
+	//     mcp_config whose entries are all disabled, since the skip tracks
+	//     the injection, not per-server usability) → no injection, keep the
+	//     suppression, and no worker is ever spawned.
+	mcpContent, err := buildMobileCoderMCPConfigContent(opts.McpConfig)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	if mcpContent != "" {
+		// An operator-pinned MULTI_PROCESS_ENABLED together with MCP is a
+		// guaranteed-failure combination (see above: silent death after
+		// step_start). Refuse before spawning rather than burn a run on a
+		// 100%-reproducible silent failure.
+		if pinned, ok := b.cfg.Env["MULTI_PROCESS_ENABLED"]; ok {
+			cancel()
+			return nil, fmt.Errorf("mobilecoder: agent.custom_env pins MULTI_PROCESS_ENABLED=%q but agent.mcp_config is set — MCP only works in multi-process mode, and the pinned value makes the run die silently after step_start (verified against mobile 1.4.1); remove the pin to run with MCP", pinned)
+		}
+		if _, dup := b.cfg.Env["MOBILE_CODER_CONFIG_CONTENT"]; dup {
+			b.cfg.Logger.Warn("agent.custom_env sets MOBILE_CODER_CONFIG_CONTENT but agent.mcp_config takes precedence and overrides it")
+		}
+		env = append(env, "MOBILE_CODER_CONFIG_CONTENT="+mcpContent)
+	}
 	// Suppress the per-run __session-worker daemon at the source. Mobile
 	// Coder's multi-process mode double-forks a detached session worker per
 	// run (reparented to init, idling ~50% CPU, never exits — verified
@@ -151,11 +225,15 @@ func (b *mobilecoderBackend) Execute(ctx context.Context, prompt string, opts Ex
 	// false as its single-process fallback (the binary's own worker-entry
 	// error path recommends it). A run under this flag completes normally
 	// with no worker left behind. Only set it when the operator has not
-	// pinned their own value through agent.custom_env; the post-run reap in
-	// the result goroutine stays as the backstop for overrides and for
-	// workers the flag does not cover.
-	if _, pinned := b.cfg.Env["MULTI_PROCESS_ENABLED"]; !pinned {
-		env = append(env, "MULTI_PROCESS_ENABLED=false")
+	// pinned their own value through agent.custom_env AND no MCP servers
+	// are configured — multi-process mode is a hard prerequisite for MCP
+	// (see the mcpContent block above). The post-run reap in the result
+	// goroutine stays as the backstop for pinned overrides and for the
+	// workers an MCP (multi-process) run leaks by design.
+	if mcpContent == "" {
+		if _, pinned := b.cfg.Env["MULTI_PROCESS_ENABLED"]; !pinned {
+			env = append(env, "MULTI_PROCESS_ENABLED=false")
+		}
 	}
 	// Override PWD so the child mobile process resolves its discovery root
 	// to the task workdir. cmd.Dir alone is not enough: Mobile Coder reads
@@ -167,13 +245,20 @@ func (b *mobilecoderBackend) Execute(ctx context.Context, prompt string, opts Ex
 	}
 	cmd.Env = env
 
+	// Count this run as in-flight from here until the result goroutine
+	// finishes (see mobilecoderInFlight). Every error path below this point
+	// that returns without entering the result goroutine must decrement.
+	mobilecoderInFlight.Add(1)
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		mobilecoderInFlight.Add(-1)
 		cancel()
 		return nil, fmt.Errorf("mobilecoder stdout pipe: %w", err)
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		mobilecoderInFlight.Add(-1)
 		cancel()
 		return nil, fmt.Errorf("mobilecoder stdin pipe: %w", err)
 	}
@@ -182,12 +267,42 @@ func (b *mobilecoderBackend) Execute(ctx context.Context, prompt string, opts Ex
 	cmd.Stderr = newLogWriter(b.cfg.Logger, "[mobilecoder:stderr] ")
 
 	if err := startOwnedProcessTree(cmd, b.cfg.Logger); err != nil {
+		mobilecoderInFlight.Add(-1)
 		closeStdin()
 		cancel()
 		return nil, fmt.Errorf("start mobilecoder: %w", err)
 	}
 
 	b.cfg.Logger.Info("mobilecoder started", "pid", cmd.Process.Pid, "cwd", opts.Cwd, "model", opts.Model)
+
+	// Sample the child's real executable from /proc while it runs. The
+	// `mobile` on PATH is typically a shim script that execs the real
+	// binary (e.g. ~/.local/bin/mobile → ~/.mobile-coder/mobile-coder), and
+	// the session workers the run spawns carry the REAL binary's path in
+	// their /proc/<pid>/exe — not the shim's. The post-run reap therefore
+	// needs both paths as candidates. Poll instead of a single read: the
+	// shim spends its first milliseconds as a shell interpreter, and the
+	// post-exec exe is only observable after it has exec'd. The sampling
+	// stops at the 15s deadline (by then exec has long happened) or at
+	// process exit, whichever comes first.
+	realExeCh := make(chan string, 1)
+	go func() {
+		link := fmt.Sprintf("/proc/%d/exe", cmd.Process.Pid)
+		last := ""
+		deadline := time.Now().Add(15 * time.Second)
+		for {
+			if target, err := os.Readlink(link); err == nil {
+				last = strings.TrimSuffix(target, " (deleted)")
+				if time.Now().After(deadline) {
+					break
+				}
+			} else {
+				break // process gone; last observed wins
+			}
+			time.Sleep(250 * time.Millisecond)
+		}
+		realExeCh <- last
+	}()
 
 	msgCh := make(chan Message, 256)
 	resCh := make(chan Result, 1)
@@ -251,22 +366,6 @@ func (b *mobilecoderBackend) Execute(ctx context.Context, prompt string, opts Ex
 		releaseProcessGroup(cmd)
 		duration := time.Since(startTime)
 
-		// mobile run leaks a detached `__session-worker` daemon per run
-		// (verified against mobile 1.4.1: the worker double-forks out of the
-		// child's process group, is reparented to the user's init, idles at
-		// ~50% CPU and never exits). The CLI offers no flag or command that
-		// suppresses or stops it, so after a successful run the backend
-		// sweeps the user's stray workers for this resolved executable. The
-		// match is on /proc/<pid>/cmdline ending in "__session-worker" with
-		// the same executable path, so an interactive TUI's workers are
-		// distinguishable only by their executable — and the TUI spawns the
-		// same ones; killing a worker the TUI still needs only costs it a
-		// respawn on next use, which is far cheaper than a 50%-CPU zombie
-		// per headless run. Best-effort: failures are logged, not fatal.
-		if scanResult.status == "completed" {
-			reapMobilecoderSessionWorkers(execPath, b.cfg.Logger)
-		}
-
 		// Wait closes the process pipes, so a prompt write still blocked when
 		// the CLI exited has returned by now. The writer sends exactly once.
 		writeErr := <-writeErrCh
@@ -318,6 +417,50 @@ func (b *mobilecoderBackend) Execute(ctx context.Context, prompt string, opts Ex
 			DurationMs: duration.Milliseconds(),
 			SessionID:  scanResult.sessionID,
 			Usage:      usage,
+		}
+
+		// mobile run leaks a detached `__session-worker` daemon per run in
+		// multi-process mode (verified against mobile 1.4.1: the worker
+		// double-forks out of the child's process group, is reparented to
+		// the user's init, idles at ~50% CPU and never exits). The CLI
+		// offers no flag or command that suppresses or stops it, so the
+		// backend sweeps the user's stray workers for this resolved
+		// executable. The sweep runs on EVERY terminal status — completed,
+		// failed, aborted, timeout — because the worker detaches at spawn
+		// time and survives regardless of how the run ends (the process-
+		// group kill cannot reach it). Single-process runs leave no workers,
+		// making the sweep a harmless no-op there. In multi-process mode the
+		// session worker is a concurrent run's execution engine, so the
+		// sweep only fires once the in-flight count drops to zero: the last
+		// run to finish cleans up every accumulated worker, and killing a
+		// worker an interactive TUI still needs only costs it a respawn on
+		// next use — far cheaper than a 50%-CPU zombie per headless run.
+		// Best-effort: failures are logged, not fatal. Residual race: a new
+		// Execute entering between the decrement and the /proc scan could
+		// have its fresh worker swept; the window is milliseconds and the
+		// affected run fails retryably. Candidates: the sampled post-exec
+		// binary (what the workers actually run as) plus the resolved PATH
+		// entry, for installs where `mobile` IS the real binary.
+		//
+		// The sweep is deferred by a grace period in its own goroutine: the
+		// CLI spawns its session worker AT EXIT, after the last stream event
+		// and roughly concurrent with cmd.Wait returning — a scan run at
+		// completion time consistently runs before the worker exists
+		// (verified against mobile 1.4.1: worker observable at t+1s, absent
+		// at t+0). The post-sleep counter re-check hands the job to a run
+		// that started in the meantime instead of sweeping its fresh worker.
+		candidates := []string{execPath}
+		if realExe := <-realExeCh; realExe != "" && realExe != execPath {
+			candidates = append(candidates, realExe)
+		}
+		if remaining := mobilecoderInFlight.Add(-1); remaining == 0 {
+			go func() {
+				time.Sleep(mobilecoderReapGrace())
+				if mobilecoderInFlight.Load() > 0 {
+					return
+				}
+				reapMobilecoderSessionWorkers(candidates, b.cfg.Logger)
+			}()
 		}
 	}()
 

@@ -11,4 +11,4 @@ package agent
 
 import "log/slog"
 
-func reapMobilecoderSessionWorkers(execPath string, logger *slog.Logger) {}
+func reapMobilecoderSessionWorkers(execPathCandidates []string, logger *slog.Logger) {}

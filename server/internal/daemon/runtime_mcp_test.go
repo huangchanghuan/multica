@@ -399,6 +399,113 @@ func TestCodebuddyUserMcpConfigPathHonorsConfigDirEnv(t *testing.T) {
 	}
 }
 
+// Mobile Coder reads its user config from the first existing of
+// ~/.config/mobile-coder/{config.json, mobile-coder.json, mobile-coder.jsonc}
+// (the fork's own GLOBAL_FILES order; XDG_CONFIG_HOME honoured like the
+// opencode case). Parsed as JSONC because the .jsonc candidate allows
+// comments, and JSONC parsing is lossless for plain JSON.
+func TestMobileCoderUserMcpConfigPathPrecedence(t *testing.T) {
+	home := t.TempDir()
+	redirectTestHome(t, home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	configDir := filepath.Join(home, ".config", "mobile-coder")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(path string) {
+		if err := os.WriteFile(path, []byte(`{"mcp":{}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Nothing on disk: the caller must still get a stable path so the read
+	// fails with ErrNotExist rather than the provider looking unsupported.
+	if got, want := mobileCoderUserConfigPath(home), filepath.Join(configDir, "config.json"); got != want {
+		t.Fatalf("no files: got %q, want %q", got, want)
+	}
+
+	jsonc := filepath.Join(configDir, "mobile-coder.jsonc")
+	write(jsonc)
+	if got := mobileCoderUserConfigPath(home); got != jsonc {
+		t.Fatalf("jsonc only: got %q, want %q", got, jsonc)
+	}
+
+	jsonFile := filepath.Join(configDir, "mobile-coder.json")
+	write(jsonFile)
+	if got := mobileCoderUserConfigPath(home); got != jsonFile {
+		t.Fatalf("mobile-coder.json must win over .jsonc: got %q", got)
+	}
+
+	configJSON := filepath.Join(configDir, "config.json")
+	write(configJSON)
+	if got := mobileCoderUserConfigPath(home); got != configJSON {
+		t.Fatalf("config.json must win (the fork's first GLOBAL_FILES entry): got %q", got)
+	}
+}
+
+func TestMobileCoderUserMcpConfigPathHonorsXDGConfigHome(t *testing.T) {
+	home := t.TempDir()
+	xdg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	configDir := filepath.Join(xdg, "mobile-coder")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(configDir, "config.json")
+	if err := os.WriteFile(want, []byte(`{"mcp":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := mobileCoderUserConfigPath(home); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestMobileCoderMcpConfigLoadsJSONCAndAgentWins(t *testing.T) {
+	home := t.TempDir()
+	redirectTestHome(t, home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	configDir := filepath.Join(home, ".config", "mobile-coder")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := `{
+  // Mobile Coder uses the OpenCode-compatible top-level key.
+  "mcp": {
+    "runtime-only": {"command": "runtime-cmd"},
+    "shared": {"url": "https://runtime.example/mcp"},
+  },
+}`
+	if err := os.WriteFile(filepath.Join(configDir, "config.json"), []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	merged, err := mergeRuntimeAndAgentMcpConfig("mobilecoder", json.RawMessage(`{"mcp":{"shared":{"command":"agent-shared"},"agent-only":{"command":"agent-cmd"}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document struct {
+		McpServers map[string]map[string]any `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(merged, &document); err != nil {
+		t.Fatal(err)
+	}
+	if len(document.McpServers) != 3 {
+		t.Fatalf("merged servers = %#v", document.McpServers)
+	}
+	if got := document.McpServers["shared"]["command"]; got != "agent-shared" {
+		t.Fatalf("shared command = %#v, want agent-shared", got)
+	}
+
+	servers, supported, err := listRuntimeLocalMcpServers("mobilecoder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !supported || len(servers) != 2 {
+		t.Fatalf("supported=%v servers=%#v", supported, servers)
+	}
+}
+
 func TestListRuntimeLocalMcpServersCodebuddyReadsItsOwnConfig(t *testing.T) {
 	home := t.TempDir()
 	redirectTestHome(t, home)

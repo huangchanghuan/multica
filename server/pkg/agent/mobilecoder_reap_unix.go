@@ -24,17 +24,34 @@ import (
 const mobilecoderSessionWorkerArg = "__session-worker"
 
 // reapMobilecoderSessionWorkers terminates the user's stray
-// `mobile-coder __session-worker` daemons whose executable path matches
-// execPath. Best-effort and non-fatal: each miss is logged and skipped, and
-// an unreadable /proc simply ends the sweep.
+// `mobile-coder __session-worker` daemons whose executable path matches any
+// of execPathCandidates. Best-effort and non-fatal: each miss is logged and
+// skipped, and an unreadable /proc simply ends the sweep.
 //
 // Matching is on the exact resolved executable path plus the trailing
 // __session-worker argv marker, so unrelated processes named "mobile" are
 // never signalled. Killing a worker that an interactive TUI still wants only
 // costs it a respawn on next use, which is far cheaper than a 50%-CPU zombie
 // per headless run accumulating on the host.
-func reapMobilecoderSessionWorkers(execPath string, logger *slog.Logger) {
-	if execPath == "" || logger == nil {
+//
+// Candidates, not a single path, because `mobile` on PATH is typically a
+// shim script that execs the real binary (e.g. ~/.local/bin/mobile →
+// ~/.mobile-coder/mobile-coder): the workers carry the REAL binary's path
+// in their /proc/<pid>/exe, so the caller passes both the resolved shim and
+// the post-exec path sampled from the run's own child process.
+func reapMobilecoderSessionWorkers(execPathCandidates []string, logger *slog.Logger) {
+	want := make(map[string]bool, len(execPathCandidates))
+	for _, candidate := range execPathCandidates {
+		if candidate == "" {
+			continue
+		}
+		resolved, err := filepath.EvalSymlinks(candidate)
+		if err != nil {
+			resolved = candidate
+		}
+		want[resolved] = true
+	}
+	if len(want) == 0 || logger == nil {
 		return
 	}
 	// Resolve both sides through /proc's exe symlink so a relative or
@@ -50,7 +67,7 @@ func reapMobilecoderSessionWorkers(execPath string, logger *slog.Logger) {
 		if err != nil || pid == self {
 			continue
 		}
-		if !mobilecoderProcIsSessionWorker(pid, execPath) {
+		if !mobilecoderProcIsSessionWorker(pid, want) {
 			continue
 		}
 		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
@@ -62,9 +79,9 @@ func reapMobilecoderSessionWorkers(execPath string, logger *slog.Logger) {
 }
 
 // mobilecoderProcIsSessionWorker reports whether pid is a `mobile …
-// __session-worker` process whose executable resolves to the same file as
-// execPath. A vanished or unreadable process is never a match.
-func mobilecoderProcIsSessionWorker(pid int, execPath string) bool {
+// __session-worker` process whose executable resolves to any of the wanted
+// paths. A vanished or unreadable process is never a match.
+func mobilecoderProcIsSessionWorker(pid int, want map[string]bool) bool {
 	raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/cmdline")
 	if err != nil {
 		return false
@@ -77,12 +94,8 @@ func mobilecoderProcIsSessionWorker(pid int, execPath string) bool {
 	if err != nil {
 		return false
 	}
-	want, err := filepath.EvalSymlinks(execPath)
-	if err != nil {
-		want = execPath
-	}
 	// The kernel suffixes a deleted executable with " (deleted)"; trim it so
 	// a mid-upgrade binary still matches its own workers.
 	procExe = strings.TrimSuffix(procExe, " (deleted)")
-	return procExe == want
+	return want[procExe]
 }

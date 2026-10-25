@@ -54,10 +54,11 @@ func mergeRuntimeAndAgentMcpConfig(provider string, agentConfig json.RawMessage)
 	agentServers := map[string]any{}
 	if servers, ok := nestedRuntimeMcpMap(agentDocument, "mcpServers"); ok {
 		agentServers = servers
-	} else if provider == "opencode" || provider == "codearts" {
+	} else if provider == "opencode" || provider == "codearts" || provider == "mobilecoder" {
 		// Older OpenCode agents may store the provider-native top-level `mcp`
 		// map. Its individual entries can still flow through the existing
 		// OpenCode adapter when placed under the canonical mcpServers envelope.
+		// Mobile Coder shares the same native shape (OpenCode-lineage fork).
 		if servers, ok := nestedRuntimeMcpMap(agentDocument, "mcp"); ok {
 			agentServers = servers
 		}
@@ -119,6 +120,37 @@ func codebuddyUserMcpConfigPath(home string) string {
 		filepath.Join(configDir, ".mcp.json"),
 		filepath.Join(configDir, "mcp.json"),
 		filepath.Join(home, ".codebuddy.json"),
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return candidates[0]
+}
+
+// mobileCoderUserConfigPath returns the user-scope config file Mobile Coder
+// reads, following the fork's own GLOBAL_FILES order (verified against
+// mobile 1.4.1 from the binary: config.json, mobile-coder.json,
+// mobile-coder.jsonc — all three are merged by the CLI, later files winning).
+// Multica reads the FIRST file that exists: an approximation of that merge,
+// but a lossless one for task semantics — any server the daemon misses is
+// still loaded natively by the CLI's own global merge, and the injected
+// MOBILE_CODER_CONFIG_CONTENT outranks every global entry anyway, so the
+// approximation only affects the capabilities inventory, never which servers
+// a task actually gets. When none exist the first candidate is returned so
+// the caller's read fails with os.ErrNotExist and is treated as "no runtime
+// servers", matching the other providers.
+func mobileCoderUserConfigPath(home string) string {
+	configHome := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME"))
+	if configHome == "" {
+		configHome = filepath.Join(home, ".config")
+	}
+	configDir := filepath.Join(configHome, "mobile-coder")
+	candidates := []string{
+		filepath.Join(configDir, "config.json"),
+		filepath.Join(configDir, "mobile-coder.json"),
+		filepath.Join(configDir, "mobile-coder.jsonc"),
 	}
 	for _, candidate := range candidates {
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
@@ -291,6 +323,8 @@ func loadRuntimeMcpServerConfigs(provider string) (map[string]any, bool, error) 
 			configHome = filepath.Join(home, ".config")
 		}
 		path, key, format = filepath.Join(configHome, "opencode", "opencode.json"), "mcp", "json"
+	case "mobilecoder":
+		path, key, format = mobileCoderUserConfigPath(home), "mcp", "jsonc"
 	case "openclaw":
 		path = strings.TrimSpace(os.Getenv("CLAWDBOT_CONFIG_PATH"))
 		if path == "" {
@@ -428,6 +462,8 @@ func listRuntimeLocalMcpServers(provider string) ([]runtimeLocalMcpServerSummary
 			configHome = filepath.Join(home, ".config")
 		}
 		path, key, source, format = filepath.Join(configHome, "opencode", "opencode.json"), "mcp", "User config", "json"
+	case "mobilecoder":
+		path, key, source, format = mobileCoderUserConfigPath(home), "mcp", "User config", "jsonc"
 	case "openclaw":
 		path = strings.TrimSpace(os.Getenv("CLAWDBOT_CONFIG_PATH"))
 		if path == "" {

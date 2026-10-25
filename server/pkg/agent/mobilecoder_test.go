@@ -40,6 +40,43 @@ printf '{"type":"step_finish","timestamp":3,"sessionID":"ses_fake","part":{"type
 `
 }
 
+// TestMobilecoderInvalidMCPConfigFailsBeforeSpawn: a malformed mcp_config
+// entry must be rejected by the daemon-side schema validation and surface as
+// an Execute error, never reach the CLI (a bad entry would otherwise crash
+// the run at MCP init or silently disable the server).
+func TestMobilecoderInvalidMCPConfigFailsBeforeSpawn(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	ranMarker := filepath.Join(tempDir, "ran")
+	fakePath := filepath.Join(tempDir, "mobile")
+	script := `#!/bin/sh
+touch "$MOBILECODER_RAN_MARKER"
+printf '{"type":"step_start","sessionID":"s","part":{"type":"step-start"}}\n'
+`
+	writeTestExecutable(t, fakePath, []byte(strings.ReplaceAll(script, "$MOBILECODER_RAN_MARKER", ranMarker)))
+
+	backend, err := New("mobilecoder", Config{
+		ExecutablePath: fakePath,
+		Logger:         slog.Default(),
+		Env:            map[string]string{"MOBILECODER_RAN_MARKER": ranMarker},
+	})
+	if err != nil {
+		t.Fatalf("new mobilecoder backend: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	mcp := json.RawMessage(`{"mcp":{"broken":{"type":"bogus"}}}`)
+	if _, err := backend.Execute(ctx, "x", ExecOptions{Cwd: t.TempDir(), Timeout: 5 * time.Second, McpConfig: mcp}); err == nil {
+		t.Fatalf("Execute with a malformed mcp_config succeeded; want a validation error")
+	} else if !strings.Contains(err.Error(), "mcp_config") {
+		t.Errorf("validation error %q does not mention mcp_config", err)
+	}
+	if _, err := os.Stat(ranMarker); err == nil {
+		t.Errorf("fake CLI ran despite the invalid mcp_config")
+	}
+}
+
 // TestMobilecoderBackendArgvShapeAndStdinPrompt pins the Mobile Coder
 // differences from the OpenCode backend: argv is
 // `run --format json --yolo --dir <wd> [--model ...] [--variant ...]

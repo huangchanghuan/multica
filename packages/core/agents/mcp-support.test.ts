@@ -5,6 +5,10 @@ import { providerSupportsMcpConfig } from "./mcp-support";
 describe("providerSupportsMcpConfig", () => {
   it("accepts a provider whose runtime consumes mcp_config", () => {
     expect(providerSupportsMcpConfig("claude")).toBe(true);
+    // Mobile Coder reads agent.mcp_config and forwards servers through
+    // MOBILE_CODER_CONFIG_CONTENT (its OpenCode-lineage inline-config
+    // channel); local and remote transports verified against mobile 1.4.1.
+    expect(providerSupportsMcpConfig("mobilecoder")).toBe(true);
   });
   it("rejects providers whose runtime ignores mcp_config", () => {
     expect(providerSupportsMcpConfig("antigravity")).toBe(false);

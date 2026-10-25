@@ -157,6 +157,13 @@ func startTaskRemoteMCPBrokers(setupCtx, lifetimeCtx context.Context, taskID, pr
 }
 
 func providerSupportsRemoteMCPBroker(provider string) bool {
+	// opencode, codearts and mobilecoder are deliberately absent: their
+	// agent.mcp_config path already forwards server entries (including the
+	// url/headers remote shape) through the CLI's own config channel, and
+	// the broker's token/header plumbing has only been verified against the
+	// listed providers. mobilecoder's remote transport itself works (canary
+	// verified against mobile 1.4.1), so adding it here is a matter of
+	// validating the broker flow, not the transport.
 	switch provider {
 	case "codex", "claude", "hermes", "qoder", "mcode":
 		return true

@@ -6,6 +6,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,19 +18,20 @@ import (
 )
 
 // runMobilecoderRecordingScript executes the mobilecoder backend against a
-// fake CLI that appends its visible MULTI_PROCESS_ENABLED / PWD environment
-// to an env file, emits a minimal completed event stream, and exits. pinned
-// (may be nil) is merged into cfg.Env before Execute so the operator-override
-// path is exercised through the real buildEnv plumbing. It returns the
-// recorded env lines.
-func runMobilecoderRecordingScript(t *testing.T, pinned map[string]string) []string {
+// fake CLI that appends its visible MULTI_PROCESS_ENABLED / PWD /
+// MOBILE_CODER_CONFIG_CONTENT environment to an env file, emits a minimal
+// completed event stream, and exits. pinned (may be nil) is merged into
+// cfg.Env before Execute so the operator-override path is exercised through
+// the real buildEnv plumbing; mcpRaw (may be nil) is passed as
+// ExecOptions.McpConfig. It returns the recorded env lines.
+func runMobilecoderRecordingScript(t *testing.T, pinned map[string]string, mcpRaw json.RawMessage) []string {
 	t.Helper()
 	tempDir := t.TempDir()
 	envFile := filepath.Join(tempDir, "env.txt")
 	fakePath := filepath.Join(tempDir, "mobile")
 	script := `#!/bin/sh
 if [ -n "$MOBILECODER_ENV_FILE" ]; then
-  env | grep -E '^(MULTI_PROCESS_ENABLED|PWD)=' >> "$MOBILECODER_ENV_FILE" || true
+  env | grep -E '^(MULTI_PROCESS_ENABLED|PWD|MOBILE_CODER_CONFIG_CONTENT)=' >> "$MOBILECODER_ENV_FILE" || true
 fi
 printf '{"type":"step_start","sessionID":"s","part":{"type":"step-start"}}\n'
 printf '{"type":"text","sessionID":"s","part":{"type":"text","text":"ok"}}\n'
@@ -51,7 +53,7 @@ printf '{"type":"step_finish","sessionID":"s","part":{"type":"step-finish","reas
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	session, err := backend.Execute(ctx, "x", ExecOptions{Cwd: t.TempDir(), Timeout: 5 * time.Second})
+	session, err := backend.Execute(ctx, "x", ExecOptions{Cwd: t.TempDir(), Timeout: 5 * time.Second, McpConfig: mcpRaw})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}
@@ -75,9 +77,12 @@ printf '{"type":"step_finish","sessionID":"s","part":{"type":"step-finish","reas
 func TestMobilecoderEnvSuppressesSessionWorker(t *testing.T) {
 	t.Parallel()
 
-	lines := runMobilecoderRecordingScript(t, nil)
+	lines := runMobilecoderRecordingScript(t, nil, nil)
 	if !containsString(lines, "MULTI_PROCESS_ENABLED=false") {
 		t.Errorf("default env missing MULTI_PROCESS_ENABLED=false: %v", lines)
+	}
+	if containsString(lines, "MOBILE_CODER_CONFIG_CONTENT=") {
+		t.Errorf("MOBILE_CODER_CONFIG_CONTENT injected without any mcp_config: %v", lines)
 	}
 }
 
@@ -87,12 +92,72 @@ func TestMobilecoderEnvSuppressesSessionWorker(t *testing.T) {
 func TestMobilecoderEnvRespectsPinnedMultiProcess(t *testing.T) {
 	t.Parallel()
 
-	lines := runMobilecoderRecordingScript(t, map[string]string{"MULTI_PROCESS_ENABLED": "true"})
+	lines := runMobilecoderRecordingScript(t, map[string]string{"MULTI_PROCESS_ENABLED": "true"}, nil)
 	if containsString(lines, "MULTI_PROCESS_ENABLED=false") {
 		t.Errorf("operator-pinned MULTI_PROCESS_ENABLED=true was overridden by the backend: %v", lines)
 	}
 	if !containsString(lines, "MULTI_PROCESS_ENABLED=true") {
 		t.Errorf("operator-pinned MULTI_PROCESS_ENABLED=true missing from child env: %v", lines)
+	}
+}
+
+// TestMobilecoderEnvInjectsMCPAndSkipsSuppression pins the MCP channel and
+// its mutual exclusion with single-process mode: a configured mcp_config is
+// forwarded via MOBILE_CODER_CONFIG_CONTENT, and the MULTI_PROCESS_ENABLED=
+// false suppression is skipped because the fork can only serve MCP from its
+// multi-process session manager (a single-process run with an injected
+// config dies silently after step_start — verified against mobile 1.4.1).
+func TestMobilecoderEnvInjectsMCPAndSkipsSuppression(t *testing.T) {
+	t.Parallel()
+
+	mcp := json.RawMessage(`{"mcp":{"canary":{"type":"local","command":["/bin/true"]}}}`)
+	lines := runMobilecoderRecordingScript(t, nil, mcp)
+	// The translator re-marshals the validated entries, so map keys come out
+	// sorted — assert against that deterministic form.
+	if !containsString(lines, `MOBILE_CODER_CONFIG_CONTENT={"mcp":{"canary":{"command":["/bin/true"],"type":"local"}}}`) {
+		t.Errorf("MOBILE_CODER_CONFIG_CONTENT missing or wrong in child env: %v", lines)
+	}
+	if containsString(lines, "MULTI_PROCESS_ENABLED=false") {
+		t.Errorf("worker suppression was injected alongside MCP; the two channels are mutually exclusive: %v", lines)
+	}
+}
+
+// TestMobilecoderMCPWithPinnedMultiProcessFailsFast: an operator-pinned
+// MULTI_PROCESS_ENABLED together with agent.mcp_config is a guaranteed
+// silent failure (the run dies after step_start, exit 0, no diagnostics), so
+// the backend must refuse the run before spawning instead of burning it.
+func TestMobilecoderMCPWithPinnedMultiProcessFailsFast(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	ranMarker := filepath.Join(tempDir, "ran")
+	fakePath := filepath.Join(tempDir, "mobile")
+	// The fake CLI records its invocation; if Execute fails fast this never
+	// runs and the marker must not exist.
+	script := `#!/bin/sh
+touch "$MOBILECODER_RAN_MARKER"
+printf '{"type":"step_start","sessionID":"s","part":{"type":"step-start"}}\n'
+`
+	writeTestExecutable(t, fakePath, []byte(strings.ReplaceAll(script, "$MOBILECODER_RAN_MARKER", ranMarker)))
+
+	backend, err := New("mobilecoder", Config{
+		ExecutablePath: fakePath,
+		Logger:         slog.Default(),
+		Env:            map[string]string{"MULTI_PROCESS_ENABLED": "true"},
+	})
+	if err != nil {
+		t.Fatalf("new mobilecoder backend: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	mcp := json.RawMessage(`{"mcp":{"canary":{"type":"local","command":["/bin/true"]}}}`)
+	if _, err := backend.Execute(ctx, "x", ExecOptions{Cwd: t.TempDir(), Timeout: 5 * time.Second, McpConfig: mcp}); err == nil {
+		t.Fatalf("Execute with pinned MULTI_PROCESS_ENABLED + mcp_config succeeded; want fail-fast error")
+	} else if !strings.Contains(err.Error(), "MULTI_PROCESS_ENABLED") {
+		t.Errorf("fail-fast error %q does not mention MULTI_PROCESS_ENABLED", err)
+	}
+	if _, err := os.Stat(ranMarker); err == nil {
+		t.Errorf("fake CLI ran despite the fail-fast rejection")
 	}
 }
 
@@ -147,7 +212,12 @@ func TestReapMobilecoderSessionWorkersKillsOnlyMatchingWorkers(t *testing.T) {
 		}
 	}()
 
-	reapMobilecoderSessionWorkers(mobileExe, slog.Default())
+	// Candidates mirror the real call site: the shim path (a name that does
+	// NOT exist as a binary — EvalSymlinks falls back to the literal path,
+	// matching nothing) plus the real binary. The worker must still be
+	// reaped through the real-binary candidate.
+	shimPath := filepath.Join(tmp, "shim", "mobile")
+	reapMobilecoderSessionWorkers([]string{shimPath, mobileExe}, slog.Default())
 
 	deadline := time.Now().Add(5 * time.Second)
 	for procAliveViaProc(worker.Pid) && time.Now().Before(deadline) {
@@ -164,8 +234,11 @@ func TestReapMobilecoderSessionWorkersKillsOnlyMatchingWorkers(t *testing.T) {
 	}
 }
 
-// TestReapMobilecoderSessionWorkersEmptyPathIsNoop pins the guards: an empty
-// execPath returns without touching /proc.
+// TestReapMobilecoderSessionWorkersEmptyPathIsNoop pins the guards: no
+// usable candidate returns without touching /proc.
 func TestReapMobilecoderSessionWorkersEmptyPathIsNoop(t *testing.T) {
-	reapMobilecoderSessionWorkers("", slog.Default()) // must not panic
+	reapMobilecoderSessionWorkers(nil, slog.Default())                 // must not panic
+	reapMobilecoderSessionWorkers([]string{"", ""}, slog.Default())    // must not panic
+	reapMobilecoderSessionWorkers([]string{"/definitely/absent"}, nil) // nil logger must not panic
 }
+
