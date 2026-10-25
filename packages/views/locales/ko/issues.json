@@ -1690,5 +1690,15 @@
   },
   "hover_card": {
     "created_updated": "{{created}} 생성 · {{updated}} 수정됨"
+  },
+  "editor_open": {
+    "section_title": "편집기에서 열기",
+    "editor_label": "편집기",
+    "location_label": "위치",
+    "location_root": "workdir 루트",
+    "open": "열기",
+    "opened": "{{editor}}(으)로 열었습니다",
+    "open_failed": "편집기를 열 수 없습니다",
+    "menu_open_workdir": "편집기에서 열기"
   }
 }

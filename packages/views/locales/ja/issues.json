@@ -1690,5 +1690,15 @@
   },
   "hover_card": {
     "created_updated": "{{created}}に作成 · {{updated}}に更新"
+  },
+  "editor_open": {
+    "section_title": "エディターで開く",
+    "editor_label": "エディター",
+    "location_label": "場所",
+    "location_root": "workdir ルート",
+    "open": "開く",
+    "opened": "{{editor}} で開きました",
+    "open_failed": "エディターを開けませんでした",
+    "menu_open_workdir": "エディターで開く"
   }
 }

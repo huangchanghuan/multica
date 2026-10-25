@@ -1756,5 +1756,15 @@
   },
   "hover_card": {
     "created_updated": "a créé {{created}} · mis à jour {{updated}}"
+  },
+  "editor_open": {
+    "section_title": "Ouvrir dans l'éditeur",
+    "editor_label": "Éditeur",
+    "location_label": "Emplacement",
+    "location_root": "racine du workdir",
+    "open": "Ouvrir",
+    "opened": "Ouvert dans {{editor}}",
+    "open_failed": "Impossible d'ouvrir l'éditeur",
+    "menu_open_workdir": "Ouvrir dans l'éditeur"
   }
 }

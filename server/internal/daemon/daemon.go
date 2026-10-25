@@ -700,6 +700,10 @@ type Daemon struct {
 	repoCheckoutTasksMu sync.RWMutex
 	repoCheckoutTasks   map[string]activeRepoCheckoutTask
 
+	// editorOpen lazily caches the "open in editor" PATH probe (and Linux
+	// graphical session variables) behind a TTL; see editor_open.go.
+	editorOpen *editorOpenState
+
 	// localPathLocks serialises agent tasks whose project resource is a
 	// local_directory pinned to this daemon. Two tasks targeting the same
 	// on-disk path run sequentially; the second blocks on the lock and is

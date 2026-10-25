@@ -1756,5 +1756,15 @@
   },
   "hover_card": {
     "created_updated": "created {{created}} · updated {{updated}}"
+  },
+  "editor_open": {
+    "section_title": "Open in editor",
+    "editor_label": "Editor",
+    "location_label": "Location",
+    "location_root": "workdir root",
+    "open": "Open",
+    "opened": "Opened in {{editor}}",
+    "open_failed": "Could not open the editor",
+    "menu_open_workdir": "Open in editor"
   }
 }

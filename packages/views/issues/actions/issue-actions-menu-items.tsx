@@ -12,6 +12,7 @@ import {
   ExternalLink,
   FolderOpen,
   Link2,
+  MonitorDown,
   Network,
   Pin,
   PinOff,
@@ -23,6 +24,7 @@ import {
 } from "lucide-react";
 import type { Issue } from "@multica/core/types";
 import { resolveWorkdirCopyTarget } from "@multica/core/issues";
+import { fetchEditorOptions, openInEditor } from "../components/editor-open-section";
 import { todayDateOnly, addDaysDateOnly } from "@multica/core/issues/date";
 import { api } from "@multica/core/api";
 import {
@@ -183,6 +185,30 @@ export function IssueActionsMenuItems({
       }
       toast.success(t(($) => $.detail.workdir_path_copied));
     });
+  }, [workdirCopyTarget, t]);
+
+  // One-click variant of the sidebar's editor section: opens the workdir
+  // itself in the first editor the daemon detected. Only for task workdirs —
+  // durable project directories are outside the workspaces root the daemon
+  // accepts. Async work happens after the click; no clipboard API involved,
+  // so losing user activation is not a concern here.
+  const handleOpenInEditor = useCallback(() => {
+    if (!workdirCopyTarget || workdirCopyTarget.source !== "task_workdir") {
+      return;
+    }
+    const path = workdirCopyTarget.path;
+    fetchEditorOptions(path)
+      .then((options) => {
+        const first = options.editors[0];
+        if (!first) {
+          toast.error(t(($) => $.editor_open.open_failed));
+          return undefined;
+        }
+        return openInEditor(path, "", first.id).then(() => {
+          toast.success(t(($) => $.editor_open.opened, { editor: first.label }));
+        });
+      })
+      .catch(() => toast.error(t(($) => $.editor_open.open_failed)));
   }, [workdirCopyTarget, t]);
 
   return (
@@ -348,6 +374,12 @@ export function IssueActionsMenuItems({
           ? t(($) => $.actions.copy_project_directory_path)
           : t(($) => $.actions.copy_workdir_path)}
       </P.Item>
+      {workdirCopyTarget?.source === "task_workdir" && (
+        <P.Item onClick={handleOpenInEditor}>
+          <MonitorDown className="h-3.5 w-3.5" />
+          {t(($) => $.editor_open.menu_open_workdir)}
+        </P.Item>
+      )}
 
       <P.Separator />
 

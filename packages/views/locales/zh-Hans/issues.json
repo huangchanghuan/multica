@@ -1690,5 +1690,15 @@
   },
   "hover_card": {
     "created_updated": "创建于 {{created}} · 更新于 {{updated}}"
+  },
+  "editor_open": {
+    "section_title": "在编辑器中打开",
+    "editor_label": "编辑器",
+    "location_label": "位置",
+    "location_root": "workdir 根目录",
+    "open": "打开",
+    "opened": "已在 {{editor}} 中打开",
+    "open_failed": "无法打开编辑器",
+    "menu_open_workdir": "在编辑器中打开"
   }
 }

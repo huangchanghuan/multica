@@ -103,6 +103,8 @@ import { useNewRunIds } from "./use-run-comment-motion";
 import { AgentRunComment, CommentCard } from "./comment-card";
 import { EMPTY_COMMENT_RUNS, buildCommentRunView, orderTimelineWithRuns, type CommentRun } from "./comment-runs";
 import { issueTasksOptions } from "@multica/core/issues/queries";
+import { resolveWorkdirCopyTarget } from "@multica/core/issues";
+import { EditorOpenSection } from "./editor-open-section";
 import { SourceContextBadge } from "./source-context-viewer";
 import { RevisionConflictCompare } from "./revision-conflict-compare";
 import { CommentInput } from "./comment-input";
@@ -1603,6 +1605,16 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   } = useIssueTimeline(id, user?.id);
 
   const { data: commentTasks } = useQuery(issueTasksOptions(id));
+  // Shares the resolveWorkdirCopyTarget logic with the ... menu's copy-path
+  // entry, but the editor section only serves task workdirs (they live under
+  // the workspaces root the daemon validates against; durable project
+  // directories can be any local path).
+  const editorWorkdir = useMemo(
+    () => resolveWorkdirCopyTarget(commentTasks),
+    [commentTasks],
+  );
+  const editorWorkdirPath =
+    editorWorkdir?.source === "task_workdir" ? editorWorkdir.path : undefined;
   const enteringRunIds = useNewRunIds(id, commentTasks);
   const previousCommentRuns = useRef(new Map<string, CommentRun[]>());
   const { runs: commentRuns, timeline: displayTimeline, standaloneRuns } = useMemo(() => {
@@ -3007,6 +3019,13 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       {/* Deliverables — the files this issue's comments delivered. Hidden
           while there are none. */}
       <DeliverablesSection files={deliverableFiles} onOpenOverview={openOverview} />
+
+      {/* Open in editor — browser-driven, via the local daemon's loopback
+          health server, so it only appears for someone on the daemon machine
+          and hides itself (renders nothing) when the daemon is unreachable.
+          Task workdir only: durable project directories live outside the
+          workspaces root the daemon is willing to open. */}
+      {editorWorkdirPath && <EditorOpenSection workdirPath={editorWorkdirPath} />}
 
       {/* Execution log — active runs + collapsed past runs, each carrying its
           own token spend, with the issue total on the section header.
