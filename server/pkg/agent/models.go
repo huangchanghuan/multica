@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -1442,6 +1443,172 @@ func discoverOmpModels(ctx context.Context, runtimeCmd Command) ([]Model, error)
 		return nil, fmt.Errorf("omp models --json: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return parseOmpModels(stdout)
+}
+
+// discoverOmoModels runs `omo --list-models` and parses the table catalog.
+// omo (oh-my-openagent, engine senpi) keeps pi's `--list-models` flag but
+// prints a human table (`provider model context max-out thinking images`),
+// and `--mode json` does not change that output. Rows are whitespace-split —
+// verified across the full catalog that provider and model columns never
+// contain spaces — so fields[0]/fields[1] are the identity and fields[4] is
+// the thinking flag. An empty catalog or a non-zero exit (binary missing, too
+// old) degrades to manual entry via the normal discovery-failure path.
+//
+// The parsed catalog is then narrowed to the providers actually configured on
+// this machine (models.json ∪ auth.json — see omoFilterConfigured), because
+// omo prints its full built-in catalog (~2000 models) regardless of which
+// providers hold credentials.
+func discoverOmoModels(ctx context.Context, runtimeCmd Command) ([]Model, error) {
+	if runtimeCmd.Path == "" {
+		runtimeCmd.Path = "omo"
+	}
+	if _, err := exec.LookPath(runtimeCmd.Path); err != nil {
+		return nil, fmt.Errorf("omo model discovery: %w", err)
+	}
+	runCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	cmd := runtimeCmd.exec(runCtx, "--list-models")
+	hideAgentWindow(cmd)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	stdout, err := outputOwned(cmd, runtimeCmd.logger)
+	if err != nil {
+		return nil, fmt.Errorf("omo --list-models: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return omoFilterConfigured(parseOmoModels(string(stdout))), nil
+}
+
+// omoConfigDir returns omo's agent config directory ($HOME/.omo/agent),
+// which holds models.json (custom provider endpoints) and auth.json
+// (stored credentials).
+func omoConfigDir() (string, bool) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", false
+	}
+	return filepath.Join(home, ".omo", "agent"), true
+}
+
+// omoConfiguredProvidersIn unions the provider ids omo can actually serve a
+// request for: `models.json` `providers` keys (custom endpoints, e.g. the
+// magpie gateway) and `auth.json` top-level keys (stored credentials, which
+// also cover built-in catalog providers used via `omo auth login`). omo's
+// `--list-models` prints its entire built-in catalog (~2000 models across
+// dozens of providers) regardless of configuration — most rows reference
+// providers with no credentials and can never succeed, so the union of the
+// two files is the filter set. readable is false only when NEITHER file
+// could be read; in that case discovery degrades to the unfiltered catalog
+// rather than silently returning zero models.
+func omoConfiguredProvidersIn(dir string) (providers map[string]bool, readable bool) {
+	providers = map[string]bool{}
+	if data, err := os.ReadFile(filepath.Join(dir, "models.json")); err == nil {
+		readable = true
+		var parsed struct {
+			Providers map[string]json.RawMessage `json:"providers"`
+		}
+		if json.Unmarshal(data, &parsed) == nil {
+			for id := range parsed.Providers {
+				providers[id] = true
+			}
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "auth.json")); err == nil {
+		readable = true
+		var parsed map[string]json.RawMessage
+		if json.Unmarshal(data, &parsed) == nil {
+			for id := range parsed {
+				providers[id] = true
+			}
+		}
+	}
+	return providers, readable
+}
+
+// omoFilterConfigured narrows a parsed `omo --list-models` catalog to the
+// providers configured on this machine (see omoConfiguredProvidersIn). When
+// the config directory itself is unreadable the full catalog is kept — the
+// filter must never turn a working discovery into an empty one just because
+// omo moved its config layout.
+func omoFilterConfigured(models []Model) []Model {
+	dir, ok := omoConfigDir()
+	if !ok {
+		return models
+	}
+	return omoFilterConfiguredIn(dir, models)
+}
+
+// omoFilterConfiguredIn is omoFilterConfigured against an explicit config
+// directory (the split exists for tests).
+func omoFilterConfiguredIn(dir string, models []Model) []Model {
+	set, readable := omoConfiguredProvidersIn(dir)
+	if !readable {
+		return models
+	}
+	filtered := make([]Model, 0, len(models))
+	for _, model := range models {
+		if set[model.Provider] {
+			filtered = append(filtered, model)
+		}
+	}
+	return filtered
+}
+
+// omoFixedThinking builds the full pi-family thinking catalog. omo's `--help`
+// declares the exact pi vocabulary (off/minimal/low/medium/high/xhigh/max, no
+// `auto`) and clamps the requested level to the model's capability itself, so
+// a table row advertising `thinking yes` gets the whole set.
+func omoFixedThinking() *ModelThinking {
+	levels := make([]ThinkingLevel, 0, len(piThinkingLevelOrder))
+	for _, value := range piThinkingLevelOrder {
+		levels = append(levels, ThinkingLevel{Value: value, Label: piThinkingLevelLabels[value]})
+	}
+	return &ModelThinking{SupportedLevels: levels}
+}
+
+// parseOmoModels parses `omo --list-models` table output. Table shape:
+//
+//	provider                    model                context  max-out  thinking  images
+//	alibaba-token-plan          glm-5.2              1M       131.1K   yes       no
+//
+// The header row is skipped by the leading `provider` token; diagnostic noise
+// shares pi's markers (warnings, usage hints) so isPiDiscoveryNoise applies.
+// Unlike parsePiModels, omo has no legacy `provider:model` colon format — the
+// id is always `provider/model` from columns 1-2. The thinking column (field
+// 5) fills Model.Thinking: `yes` → the full fixed vocabulary, anything else →
+// nil (no thinking control), matching pi's reasoning=false semantics.
+func parseOmoModels(output string) []Model {
+	scanner := bufio.NewScanner(strings.NewReader(output))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	var models []Model
+	seen := map[string]bool{}
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || isPiDiscoveryNoise(line) {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		if strings.EqualFold(fields[0], "provider") {
+			continue
+		}
+		provider, name := fields[0], fields[1]
+		if provider == "" || name == "" {
+			continue
+		}
+		id := provider + "/" + name
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		model := Model{ID: id, Label: id, Provider: provider}
+		if len(fields) >= 5 && strings.EqualFold(fields[4], "yes") {
+			model.Thinking = omoFixedThinking()
+		}
+		models = append(models, model)
+	}
+	return models
 }
 
 // parseOmpModels parses the JSON output from `omp models --json`. omp emits

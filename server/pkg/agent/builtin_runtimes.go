@@ -82,7 +82,11 @@ type ModelDiscoveryFunc func(ctx context.Context, runtimeCmd Command) ([]Model, 
 //
 // A runtime identity appears here when it needs its own probe/display/skills
 // but reuses an existing backend's protocol. The first entry is omp (oh-my-pi):
-// a separate CLI that speaks the pi JSON event protocol.
+// a separate CLI that speaks the pi JSON event protocol. The second is omo
+// (oh-my-openagent): another pi-family fork (engine senpi) that — unlike omp —
+// keeps pi's argv contract (`-p --mode json --session --model --thinking`) and
+// creates `--session` files fresh, so it runs the standard pi execution path
+// unchanged.
 var BuiltinRuntimes = []BuiltinRuntime{
 	{
 		ID:                "omp",
@@ -96,6 +100,19 @@ var BuiltinRuntimes = []BuiltinRuntime{
 		DefaultExecutable: "omp",
 		ProviderLabel:     "omp",
 		ModelDiscovery:    discoverOmpModels,
+	},
+	{
+		ID:                "omo",
+		ProtocolFamily:    "pi",
+		DefaultCommand:    "omo",
+		EnvPrefix:         "MULTICA_OMO",
+		DisplayName:       "OmO",
+		SkillsDir:         ".omo/skills",
+		UserSkillsDir:     ".omo/agent/skills",
+		LaunchHeader:      "omo (json mode)",
+		DefaultExecutable: "omo",
+		ProviderLabel:     "omo",
+		ModelDiscovery:    discoverOmoModels,
 	},
 }
 

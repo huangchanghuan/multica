@@ -52,6 +52,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   muse: "Muse Code",
   mobilecoder: "Mobile Coder",
   omp: "Oh-My-Pi",
+  omo: "OmO",
   zeroclaw: "ZeroClaw",
 };
 

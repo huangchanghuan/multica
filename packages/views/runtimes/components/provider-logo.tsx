@@ -418,6 +418,10 @@ export function ProviderLogo({
       return <PiLogo className={className} />;
     case "omp":
       return <PiLogo className={className} />;
+    case "omo":
+      // OmO is a pi-family fork (engine senpi); no dedicated logo yet, share
+      // Pi's mark the same way omp does.
+      return <PiLogo className={className} />;
     case "copilot":
       return <CopilotLogo className={className} />;
     case "cursor":

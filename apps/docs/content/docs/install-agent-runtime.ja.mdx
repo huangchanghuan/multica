@@ -35,6 +35,7 @@ Multica は現在、次のコマンドを検出します。
 | OpenCode | `opencode` | [OpenCode クイックスタート](https://opencode.ai/en/docs) |
 | Pi coding agent | `pi` | [Pi coding agent](https://github.com/earendil-works/pi) |
 | Oh-My-Pi | `omp` | [Oh-My-Pi インストール](https://omp.sh) |
+| OmO | `omo` | [OmO インストール](https://get.omo.dev) |
 | Qoder CLI | `qodercli` | [Qoder CLI クイックスタート](https://docs.qoder.com/en/cli/quick-start) |
 | Qoder CN CLI | `qoderclicn` | [Qoder CN CLI クイックスタート](https://help.aliyun.com/en/lingma/qodercli-cn/user-guide/qoder-cli-cn-get-started-quickly) |
 | Qwen Code | `qwen` | [Qwen Code](https://github.com/QwenLM/qwen-code) |
@@ -60,6 +61,7 @@ MiniMax Code を使う場合は、対応する Node.js バージョン（`>=22.1
 Muse Code は 1.4.10 以降が必要です。[公式のインストールとサインイン手順](https://dev.meta.ai/docs/muse-code)に従い、`muse` が `PATH` にあることを確認してください。Multica は MSP からモデル一覧を取得し、既存のセッションを再開できます。
 
 Mobile Coder は中国移動の内部ビルドとして提供されています。内部の配布チャネルから `mobile` CLI をインストールし、`mobile` のサインインを完了してから、`mobile` が `PATH` にあることを確認してください。Multica は `mobile models` からモデル一覧を取得し、既存のセッションを再開できます。
+OmO は senpi エンジン（Pi coding agent のフォーク）上で動作します。`curl -fsSL https://get.omo.dev/install.sh | bash`（または `npm i -g omo-ai`。npm の同名 `omo` パッケージは無関係なプロジェクトです）でインストールし、一度 `omo` を実行してサインインを完了してください。Multica は `omo --list-models` からモデル一覧を取得し、既存のセッションを再開できます。OmO はマネージド MCP 構成にまだ対応していません。
 
 DeepSeek Harness を使う場合は、Node.js 20+ をインストールして `npm install -g @deepseek-ai/dsh` を実行し、Multica ランタイムプロファイルを追加してください。このバンドルが Multica の利用する `--stdio` プロトコルを提供しており、素の `dsh` だけでは使えない理由でもあります。`MULTICA_DSH_PROFILE_BUNDLE` にインストールするバンドルを設定すればデーモンが追加します。手動で行う場合は `dsh plugin --profile multica add <bundle>` を実行します。`<bundle>` は `dsh plugin` が受け付けるもの、つまり npm のパッケージ名、ディレクトリ、パック済み tarball のいずれかで、Multica 自身のブリッジは [multica-ai/dsh-multica-runtime](https://github.com/multica-ai/dsh-multica-runtime) にあります。これはまだ公開 npm レジストリに公開されていないため（[multica#6936](https://github.com/multica-ai/multica/issues/6936)）、現時点でセルフホストのチームはそのリポジトリからビルドし、変数をビルド出力のディレクトリに向けます。デーモンを動かすマシンとビルドしたマシンが別なら、`npm pack` が生成する tarball を指定してください。ブリッジが公開されれば、パッケージ名を指定するのが最も簡単になります。いずれの場合も、自チームが公開・ビルドしたものを優先してください。この値は追加の確認なしに各デーモンホストの DSH ホームへインストールされるため、素性の分からないサードパーティのパッケージを指定することは利便性の問題ではなくサプライチェーンの判断です。npm パッケージではなく DeepSeek Harness Desktop をインストールした場合、デーモンはそのアプリが生成する CLI シムも、アプリ自身のユーザーデータディレクトリから探します。macOS は `~/Library/Application Support/DSH Desktop`、Windows は `%APPDATA%\DSH Desktop` です。Windows のそれはローミングのアプリケーションデータであり、インストール先ではありません。アプリ自体は Program Files または `%LOCALAPPDATA%\Programs` に入りますが、駆動される CLI はユーザーごとの他の状態と同じ場所に置かれます。これらのパスのバージョン部分は生成された ID なので、デーモンは列挙して最新のものを優先します。PATH に他のものは必要ありません。生成されたシムはアプリ同梱のランタイムを絶対パスで起動します。DSH Desktop が既定以外の場所にある場合は `MULTICA_DSH_PATH` でそのシムを指定してください。デーモンは `dsh --profile multica --probe` が成功した場合のみ DeepSeek Harness を登録し、失敗した場合は `/health` にプロファイルの欠落を報告します。デーモンを起動する前に `DEEPSEEK_API_KEY` を設定（または dsh の設定に保存）してください。
 

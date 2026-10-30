@@ -957,6 +957,20 @@ var providerThinkingEnums = map[string]map[string]bool{
 		"xhigh":   true,
 		"max":     true,
 	},
+	// OmO (oh-my-openagent, engine senpi) inherits pi's fixed CLI vocabulary
+	// verbatim — `omo --help` declares off/minimal/low/medium/high/xhigh/max
+	// with no `auto` — and clamps the requested level to the model itself, so
+	// the full set is always accepted here and omoFixedThinking advertises the
+	// same set per model in discovery.
+	"omo": {
+		"off":     true,
+		"minimal": true,
+		"low":     true,
+		"medium":  true,
+		"high":    true,
+		"xhigh":   true,
+		"max":     true,
+	},
 	// muse takes Meta Muse Code's closed MSP vocabulary, declared on the
 	// `reasoningEffort` field of `turn/start`. The host re-validates the tier
 	// against the session model before it samples, so this list is the

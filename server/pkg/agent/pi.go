@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -1152,9 +1153,32 @@ const (
 )
 
 // preparePiMcpExtension writes Pi's own temporary extension. omp shares this
-// backend but keeps its project mcp.json, so it never gets this file.
+// backend but keeps its project mcp.json, so it never gets this file. omo is
+// also excluded: its MCP configuration surface (~/.omo/agent/mcp.json and
+// whatever project-level paths it honours) has not been mapped, and omo's
+// tolerance for a generated pi extension is unverified — phase 1 fails fast
+// with an explicit error instead of silently injecting a config omo may
+// ignore (the mobilecoder silent-failure lesson).
 func (b *piBackend) preparePiMcpExtension(raw json.RawMessage) (string, error) {
-	if b.providerLabel == "omp" || !hasManagedMcpConfig(raw) {
+	if b.providerLabel == "omp" {
+		return "", nil
+	}
+	if b.providerLabel == "omo" {
+		// Only a config with actual servers fails fast; an empty object is
+		// the same "nothing configured" case pi treats as a no-op.
+		if !hasManagedMcpConfig(raw) {
+			return "", nil
+		}
+		servers, err := piMcpExtensionServers(raw)
+		if err != nil {
+			return "", err
+		}
+		if len(servers) == 0 {
+			return "", nil
+		}
+		return "", errors.New("omo does not support managed MCP configuration yet; remove the agent's mcp_config or pick a runtime with MCP support")
+	}
+	if !hasManagedMcpConfig(raw) {
 		return "", nil
 	}
 	servers, err := piMcpExtensionServers(raw)
